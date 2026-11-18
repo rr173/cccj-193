@@ -534,6 +534,25 @@ class DiskFMIndex:
                 return raw.decode("utf-8")
         raise KeyError(doc_id)
 
+    def iter_documents(self):
+        """Yield ``(doc_id, text)`` in document order, one document at a time.
+
+        Each document's bytes are read exactly once from ``content.bin``; the
+        doc table and id blob are walked through the bounded pager, so RAM
+        does not grow with the corpus.  Used by the similarity-catalog
+        builder, which must stream the sealed corpus without modifying it.
+        """
+        for idx in range(self.n_docs):
+            doc_id = self._read_doc_id(idx)
+            rec = self._doc_record(idx)
+            length = self._doc_byte_len(idx)
+            self._content_f.seek(fmt.HEADER_SIZE + rec["content_start"])
+            raw = self._content_f.read(length)
+            if len(raw) != length:
+                raise fmt.IndexCorruptError("content.bin truncated mid-document")
+            self._stats["content_bytes_read"] += len(raw)
+            yield doc_id, raw.decode("utf-8")
+
     def stats(self) -> Dict[str, int]:
         s = dict(self._stats)
         s["rank_page_misses"] = self._rank_pager.page_misses

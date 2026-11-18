@@ -11,6 +11,7 @@ dependencies = []
 
 [project.scripts]
 diskfm = "diskfm.cli:main"
+diskfm-sim = "diskfm.simcli:main"
 
 [tool.setuptools]
 packages = ["diskfm"]

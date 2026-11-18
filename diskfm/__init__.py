@@ -4,6 +4,10 @@ Public surface:
 
 * :class:`~diskfm.builder.IndexBuilder` -- external-memory construction;
 * :class:`~diskfm.query.DiskFMIndex` -- reopen, count, paged locate;
+* :class:`~diskfm.simbuilder.SimilarityBuilder` -- document-level
+  near-duplicate similarity catalog construction (qgram postings);
+* :class:`~diskfm.simquery.SimilarityCatalog` -- reopen, paged
+  near-duplicate query, shared-shingle explain, deep validation;
 * :class:`~diskfm.format.IndexCorruptError`,
   :class:`~diskfm.format.CursorError`;
 * :class:`~diskfm.query.Hit`.
@@ -12,6 +16,8 @@ Public surface:
 from .builder import BuildStats, IndexBuilder
 from .format import CursorError, IndexCorruptError
 from .query import DiskFMIndex, Hit
+from .simbuilder import SimilarityBuilder, SimBuildStats
+from .simquery import SimilarityCatalog
 
 __all__ = [
     "IndexBuilder",
@@ -20,4 +26,7 @@ __all__ = [
     "Hit",
     "IndexCorruptError",
     "CursorError",
+    "SimilarityBuilder",
+    "SimBuildStats",
+    "SimilarityCatalog",
 ]
