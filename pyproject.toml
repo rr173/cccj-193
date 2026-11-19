@@ -13,6 +13,7 @@ dependencies = []
 diskfm = "diskfm.cli:main"
 diskfm-sim = "diskfm.simcli:main"
 diskfm-cooccur = "diskfm.cooccurcli:main"
+diskfm-pub = "diskfm.pubcli:main"
 
 [tool.setuptools]
 packages = ["diskfm"]

@@ -17,6 +17,9 @@ from .builder import BuildStats, IndexBuilder
 from .cooccur import (CooccurAnalysis, CooccurError, CooccurRequest, Pattern,
                       analyse, build_request)
 from .format import CursorError, IndexCorruptError
+from .pubbuilder import PublishStats, ReleaseBuilder
+from .pubformat import PublishRejected, ReleaseCorruptError
+from .pubquery import ReleasePackage
 from .query import DiskFMIndex, Hit
 from .simbuilder import SimilarityBuilder, SimBuildStats
 from .simquery import SimilarityCatalog
@@ -37,4 +40,9 @@ __all__ = [
     "Pattern",
     "analyse",
     "build_request",
+    "ReleaseBuilder",
+    "ReleasePackage",
+    "PublishStats",
+    "PublishRejected",
+    "ReleaseCorruptError",
 ]

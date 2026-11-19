@@ -12,6 +12,12 @@
 > 内码点窗口内的命中位置对并分页给出两种坐标（有界外排 + 逐文档精确窗口
 > 连接，非逐短语 `locate` 拼接），见 [COOCCURRENCE.md](COOCCURRENCE.md)
 > 与 `python3 -m diskfm.cooccurcli`。
+>
+> **脱敏发布管道**：在封存索引或上一版完整发布包上，只应用人工批准的无序
+> JSONL 编辑清单，产出可独立搬运、自带文档与坐标血缘的发布包；支持基准原文
+> ↔ 发布版双向迁移（码点与 UTF-8 字节边界、丢失片段、生成段来源回查），
+> 全程有界内存、原子发布，见 [PUBLISH.md](PUBLISH.md) 与
+> `python3 -m diskfm.pubcli`。
 
 - 只使用 Python 标准库；**不调用**任何现成后缀数组 / FM-index / 全文检索库。
 - 排序键只含整数（位置、rank、行号），**从不把完整后缀复制成排序键**。
@@ -148,6 +154,8 @@ python3 -I pytest.py test_similarity.py  # 35 项相似度目录差分/损坏/�
 python3 -I pytest.py test_sim_large.py   # 相似度大语料有界内存证据 + CLI 端到端
 python3 -I pytest.py test_cooccur.py     # 23 项共现差分/分页/游标/损坏测试
 python3 -I pytest.py test_cooccur_large.py  # 共现密集命中/有界内存证据
+python3 -I pytest.py test_publish.py     # 脱敏发布：验收场景/拒绝/损坏/中断/差分
+python3 -I pytest.py test_publish_large.py  # 发布有界内存、磁盘溢写与局部查询证据
 ```
 
 差分测试的期望结果由 `tests/oracle.py` 独立生成：对**原文**反复
