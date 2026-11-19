@@ -14,6 +14,8 @@ Public surface:
 """
 
 from .builder import BuildStats, IndexBuilder
+from .cooccur import (CooccurAnalysis, CooccurError, CooccurRequest, Pattern,
+                      analyse, build_request)
 from .format import CursorError, IndexCorruptError
 from .query import DiskFMIndex, Hit
 from .simbuilder import SimilarityBuilder, SimBuildStats
@@ -29,4 +31,10 @@ __all__ = [
     "SimilarityBuilder",
     "SimBuildStats",
     "SimilarityCatalog",
+    "CooccurAnalysis",
+    "CooccurError",
+    "CooccurRequest",
+    "Pattern",
+    "analyse",
+    "build_request",
 ]

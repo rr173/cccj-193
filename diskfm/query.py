@@ -28,7 +28,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 from . import format as fmt
 from .pager import FilePager
@@ -39,6 +39,57 @@ class Hit:
     doc_id: str
     codepoint_offset: int
     utf8_byte_offset: int
+
+
+class DocumentByteCursor:
+    """Lazy forward code-point -> UTF-8 byte offset cursor for one document.
+
+    Decodes the document's stored bytes exactly once, incrementally, and
+    advances only as far as the next requested offset.  It holds one
+    incremental decoder and two integers -- no document buffer -- so it
+    stays bounded however many hits fall inside the document.  Offsets must
+    be supplied in non-decreasing order; an offset in the middle of a
+    multi-byte character is corruption.
+    """
+
+    def __init__(self, index: "DiskFMIndex", doc_idx: int):
+        self._index = index
+        doc = index._doc_record(doc_idx)
+        self._abs_end = fmt.HEADER_SIZE + doc["content_start"] + \
+            index._doc_byte_len(doc_idx)
+        index._content_f.seek(fmt.HEADER_SIZE + doc["content_start"])
+        self._decoder = codecs.getincrementaldecoder("utf-8")(
+            errors="strict")
+        self._byte_pos = 0
+        self._cp_pos = 0
+        self._done = False
+
+    def byte_offset(self, cp_offset: int) -> int:
+        if cp_offset < self._cp_pos:
+            raise fmt.IndexCorruptError(
+                "byte-offset cursor asked for a decreasing offset")
+        while self._cp_pos < cp_offset:
+            if self._done:
+                raise fmt.IndexCorruptError(
+                    "byte-offset recovery ran past document end")
+            if self._index._content_f.tell() >= self._abs_end:
+                raise fmt.IndexCorruptError(
+                    "byte-offset recovery ran past document end")
+            one = self._index._content_f.read(1)
+            self._index._stats["content_bytes_read"] += 1
+            try:
+                decoded = self._decoder.decode(one)
+            except UnicodeDecodeError as exc:
+                raise fmt.IndexCorruptError(
+                    "invalid UTF-8 inside indexed document") from exc
+            if not decoded:
+                continue
+            if self._cp_pos + len(decoded) > cp_offset:
+                raise fmt.IndexCorruptError(
+                    "codepoint offset is not a character boundary")
+            self._byte_pos += len(decoded.encode("utf-8"))
+            self._cp_pos += len(decoded)
+        return self._byte_pos
 
 
 class DiskFMIndex:
@@ -434,6 +485,25 @@ class DiskFMIndex:
                     - fmt.HEADER_SIZE)
         return body_len - rec["content_start"]
 
+    def iter_document_byte_offsets(self, doc_idx: int,
+                                   cp_offsets) -> Iterator[Tuple[int, int]]:
+        """Yield ``(codepoint_offset, utf8_byte_offset)`` for sorted offsets.
+
+        ``cp_offsets`` must be strictly increasing within one document.  A
+        single forward incremental-decode pass over that document's stored
+        bytes yields every byte offset, so the total work is one linear pass
+        over the document regardless of hit density -- never one prefix
+        walk per hit.  Coordinate kinds are still derived independently by
+        decoding the exact stored bytes; no re-encoding of whole documents.
+        """
+        cursor = self.document_byte_cursor(doc_idx)
+        for cp_offset in cp_offsets:
+            yield cp_offset, cursor.byte_offset(cp_offset)
+
+    def document_byte_cursor(self, doc_idx: int) -> "DocumentByteCursor":
+        """Open a lazy forward byte-offset cursor for one document."""
+        return DocumentByteCursor(self, doc_idx)
+
     def locate_page(self, query: str, page_size: int,
                     cursor: Optional[str] = None) -> Tuple[List[Hit], Optional[str]]:
         """Return one page of hits and a cursor for the next page (or None)."""
@@ -476,6 +546,60 @@ class DiskFMIndex:
             if cursor is None:
                 break
         return out
+
+    # ------------------------------------------------------------------ #
+    # Co-occurrence analysis entry point
+    # ------------------------------------------------------------------ #
+    def cooccur(self, patterns, pairs, window: int, *,
+                chunk_items: int = None, chunk_bytes: int = None,
+                refresh: bool = False):
+        """Windowed multi-phrase co-occurrence over this open index.
+
+        ``patterns`` is a sequence of ``(pattern_id, phrase)`` entries and
+        ``pairs`` a sequence of ``(pattern_id, pattern_id)`` pairs, both
+        fully validated before any scanning starts.  Returns a
+        :class:`diskfm.cooccur.CooccurAnalysis` whose per-document totals
+        and position pairs are paged, deterministic and cursor-resumable.
+
+        The hits themselves come from :meth:`iter_raw_hits` (the locate
+        backward-search interval, streamed with no page seam); their
+        transformation into a per-document join stream is
+        :mod:`diskfm.cooccur`'s external sort.  This is not a per-phrase
+        ``locate`` wrapper and never decodes the corpus to count.
+        """
+        from .cooccur import (DEFAULT_CHUNK_BYTES, DEFAULT_CHUNK_ITEMS,
+                              analyse)
+        return analyse(
+            self, patterns, pairs, window,
+            chunk_items=(DEFAULT_CHUNK_ITEMS if chunk_items is None
+                         else chunk_items),
+            chunk_bytes=(DEFAULT_CHUNK_BYTES if chunk_bytes is None
+                         else chunk_bytes),
+            refresh=refresh)
+
+    def iter_raw_hits(self, query: str) -> Iterator[Tuple[int, int]]:
+        """Stream ``(doc_index, codepoint_offset)`` for every occurrence.
+
+        This is the hit source used by co-occurrence analysis.  It walks the
+        exact same backward-search interval and LF coordinate recovery as
+        :meth:`locate_page`, but yields positions one at a time and never
+        reads or decodes ``content.bin``.  Rows are visited strictly once,
+        in suffix order, so no hit can be duplicated or skipped (there is
+        no page boundary here at all).
+
+        The order is *suffix* order, which interleaves documents arbitrarily;
+        callers that need a joinable ``(document, position)`` stream feed
+        these records through an external sort.  Memory is O(1) here.
+        """
+        lo, hi = self._interval(query)
+        for row in range(lo, hi):
+            pos = self._row_to_position(row)
+            doc_idx = self._doc_for_position(pos)
+            doc = self._doc_record(doc_idx)
+            cp_off = pos - doc["t_start"]
+            if cp_off > doc["t_len"]:
+                raise fmt.IndexCorruptError("hit outside document bounds")
+            yield doc_idx, cp_off
 
     # ------------------------------------------------------------------ #
     # Cursors: bound to identity + query + interval + position
